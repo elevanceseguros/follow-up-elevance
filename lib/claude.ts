@@ -35,15 +35,12 @@ export async function classifyLead(input: Record<string, unknown>): Promise<Clas
 
   const prompt = `Você é o assistente de follow-up da Elevance Seguros. Classifique o lead sem prometer cobertura, preço ou aprovação. Responda apenas JSON válido com: intencao, produto, urgencia, resumo, acao_recomendada, mensagem_sugerida. Dados: ${JSON.stringify(input)}`;
 
-  const modelCandidates = [
+  const modelCandidates = Array.from(new Set([
+    'claude-haiku-4-5-20251001',
     process.env.ANTHROPIC_MODEL,
     process.env.CLAUDE_MODEL,
-    'claude-3-haiku-20240307',
-    'claude-3-sonnet-20240229',
-    'claude-sonnet-4-20250514',
-    'claude-3-5-sonnet-latest',
-    'claude-3-5-haiku-latest'
-  ].filter(Boolean) as string[];
+    'claude-sonnet-4-5-20250929'
+  ].filter(Boolean))) as string[];
 
   for (const model of modelCandidates) {
     try {
