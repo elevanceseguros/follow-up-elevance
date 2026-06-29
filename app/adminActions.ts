@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendWhatsApp } from '@/lib/zapi';
+import { requireAdmin } from '@/lib/adminAuth';
 
 function nextDate(days: number) {
   const d = new Date();
@@ -41,6 +42,7 @@ async function getApprovalAndLead(id: string) {
 }
 
 export async function approveFollowup(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get('id') || '');
   const mensagem = String(formData.get('mensagem') || '').trim();
   if (!id) throw new Error('ID obrigatório');
@@ -70,6 +72,7 @@ export async function approveFollowup(formData: FormData) {
 }
 
 export async function skipFollowup(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get('id') || '');
   if (!id) throw new Error('ID obrigatório');
 
@@ -96,6 +99,7 @@ export async function skipFollowup(formData: FormData) {
 }
 
 export async function markColdFollowup(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get('id') || '');
   if (!id) throw new Error('ID obrigatório');
 
