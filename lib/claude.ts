@@ -8,8 +8,8 @@ type Classification = {
 };
 
 export async function classifyLead(input: Record<string, unknown>): Promise<Classification> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY ausente');
+  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPICAPIKEY;
+  if (!apiKey) throw new Error('Chave Anthropic ausente. Configure ANTHROPIC_API_KEY ou ANTHROPICAPIKEY.');
 
   const prompt = `Você é o assistente de follow-up da Elevance Seguros. Classifique o lead sem prometer cobertura, preço ou aprovação. Responda apenas JSON válido com: intencao, produto, urgencia, resumo, acao_recomendada, mensagem_sugerida. Dados: ${JSON.stringify(input)}`;
 
