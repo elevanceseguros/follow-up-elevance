@@ -7,37 +7,61 @@ type Classification = {
   mensagem_sugerida?: string;
 };
 
+function fallbackClassify(input: Record<string, unknown>): Classification {
+  const rawText = [input.status, input.ultimaMensagemCliente, input.transcricaoAudio, input.ultimaMensagemEnviada].filter(Boolean).join(' ').toLowerCase();
+  let intencao = 'nao_respondeu';
+  let urgencia: 'baixa' | 'media' | 'alta' = 'media';
+
+  if (rawText.includes('fechar') || rawText.includes('aprov') || rawText.includes('pode fazer') || rawText.includes('vamos fechar')) { intencao = 'aprovou'; urgencia = 'alta'; }
+  else if (rawText.includes('caro') || rawText.includes('valor') || rawText.includes('preço') || rawText.includes('preco')) intencao = 'achou_caro';
+  else if (rawText.includes('pensar') || rawText.includes('vejo') || rawText.includes('depois')) intencao = 'vou_pensar';
+  else if (rawText.includes('dúvida') || rawText.includes('duvida') || rawText.includes('?')) intencao = 'duvida';
+  else if (rawText.includes('não quero') || rawText.includes('nao quero') || rawText.includes('não tenho interesse') || rawText.includes('nao tenho interesse')) { intencao = 'nao_quer_agora'; urgencia = 'baixa'; }
+
+  const produto = String(input.produto || 'outro');
+  return {
+    intencao,
+    produto,
+    urgencia,
+    resumo: 'Classificação automática local usada porque o Claude não respondeu com sucesso.',
+    acao_recomendada: intencao === 'aprovou' ? 'Priorizar atendimento humano para fechamento.' : 'Manter na régua de follow-up.',
+    mensagem_sugerida: 'Oi! Passando rapidinho para saber se ficou alguma dúvida sobre a proposta que te enviei.'
+  };
+}
+
 export async function classifyLead(input: Record<string, unknown>): Promise<Classification> {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPICAPIKEY;
-  if (!apiKey) throw new Error('Chave Anthropic ausente. Configure ANTHROPIC_API_KEY ou ANTHROPICAPIKEY.');
+  if (!apiKey) return fallbackClassify(input);
 
   const prompt = `Você é o assistente de follow-up da Elevance Seguros. Classifique o lead sem prometer cobertura, preço ou aprovação. Responda apenas JSON válido com: intencao, produto, urgencia, resumo, acao_recomendada, mensagem_sugerida. Dados: ${JSON.stringify(input)}`;
 
   const modelCandidates = [
     process.env.ANTHROPIC_MODEL,
     process.env.CLAUDE_MODEL,
+    'claude-3-haiku-20240307',
+    'claude-3-sonnet-20240229',
     'claude-sonnet-4-20250514',
     'claude-3-5-sonnet-latest',
     'claude-3-5-haiku-latest'
   ].filter(Boolean) as string[];
 
-  let lastError = '';
   for (const model of modelCandidates) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: 'user', content: prompt }] })
-    });
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: 'user', content: prompt }] })
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      const text = data.content?.[0]?.text || '{}';
-      return JSON.parse(text);
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.content?.[0]?.text || '{}';
+        return JSON.parse(text);
+      }
+    } catch {
+      // fallback abaixo
     }
-
-    lastError = `Erro Claude: ${res.status} usando modelo ${model}`;
-    if (![400, 404].includes(res.status)) break;
   }
 
-  throw new Error(lastError || 'Erro Claude desconhecido');
+  return fallbackClassify(input);
 }
