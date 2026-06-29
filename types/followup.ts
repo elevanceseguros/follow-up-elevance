@@ -1,0 +1,3 @@
+export type LeadStatus = 'novo' | 'nao_respondeu' | 'vou_pensar' | 'achou_caro' | 'duvida' | 'aprovou' | 'nao_quer_agora' | 'pediu_alteracao' | 'perdido' | 'fechado';
+export type Product = 'plano_saude' | 'seguro_auto' | 'seguro_moto' | 'seguro_vida' | 'seguro_empresarial' | 'seguro_residencial' | 'protecao_veicular' | 'consorcio' | 'outro';
+export type Lead = { id:string; nome:string|null; telefone:string; produto:Product; status:LeadStatus; origem:string|null; ultima_mensagem_cliente:string|null; ultima_mensagem_enviada:string|null; resumo:string|null; urgencia:'baixa'|'media'|'alta'; next_followup_at:string|null; created_at:string; updated_at:string; };
