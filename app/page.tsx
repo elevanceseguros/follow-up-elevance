@@ -5,8 +5,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   let leads: any[] = [];
+  let approvals: any[] = [];
   let configError: string | null = null;
-  let pendingCount = 0;
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
@@ -16,9 +16,12 @@ export default async function Home() {
 
     const pending = await supabaseAdmin
       .from('followup_approvals')
-      .select('id', { count: 'exact', head: true })
-      .eq('approval_status', 'pending');
-    pendingCount = pending.count || 0;
+      .select('*')
+      .eq('approval_status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(50);
+    approvals = pending.data || [];
+    if (pending.error) configError = pending.error.message;
   } catch (error: any) {
     configError = error.message;
   }
@@ -26,6 +29,7 @@ export default async function Home() {
   const total = leads.length;
   const quentes = leads.filter(l => ['aprovou','duvida','pediu_alteracao'].includes(l.status)).length;
   const followups = leads.filter(l => ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora'].includes(l.status)).length;
+  const pendingCount = approvals.length;
 
   return <main className="wrap">
     <header className="hero">
@@ -45,7 +49,7 @@ export default async function Home() {
       <div className="card"><span className="badge">Aguardando aprovação</span><h2>{pendingCount}</h2></div>
     </section>
 
-    <AdminPanel />
+    <AdminPanel approvals={approvals} />
 
     <section className="card" style={{marginTop:24}}>
       <h2>Últimos leads</h2>
