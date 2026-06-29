@@ -61,16 +61,49 @@ export async function POST(req: NextRequest) {
       let zapi = null;
       let sent = false;
 
+      const newNextFollowupAt = nextFollowupByStatus(lead.status);
+
       if (body.send) {
         zapi = await sendWhatsApp(lead.telefone, mensagem);
         sent = true;
-      }
+      } else {
+        const { data: existingPending } = await supabaseAdmin
+          .from('followup_approvals')
+          .select('id')
+          .eq('lead_id', lead.id)
+          .eq('approval_status', 'pending')
+          .maybeSingle();
 
-      const newNextFollowupAt = nextFollowupByStatus(lead.status);
+        if (existingPending?.id) {
+          await supabaseAdmin
+            .from('followup_approvals')
+            .update({
+              nome: lead.nome,
+              telefone: lead.telefone,
+              produto: lead.produto,
+              lead_status: lead.status,
+              mensagem,
+              ai_payload: classification,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingPending.id);
+        } else {
+          await supabaseAdmin.from('followup_approvals').insert({
+            lead_id: lead.id,
+            nome: lead.nome,
+            telefone: lead.telefone,
+            produto: lead.produto,
+            lead_status: lead.status,
+            mensagem,
+            ai_payload: classification,
+            approval_status: 'pending'
+          });
+        }
+      }
 
       await supabaseAdmin.from('lead_events').insert({
         lead_id: lead.id,
-        type: body.send ? 'followup_sent' : 'followup_preview',
+        type: body.send ? 'followup_sent' : 'followup_approval_created',
         payload: { mensagem, classification, zapi, sent }
       });
 
@@ -92,12 +125,13 @@ export async function POST(req: NextRequest) {
         status: lead.status,
         produto: lead.produto,
         sent,
+        approval: body.send ? null : 'pending',
         mensagem,
         next_followup_at: body.send ? newNextFollowupAt : lead.next_followup_at
       });
     }
 
-    return NextResponse.json({ ok: true, mode: body.send ? 'send' : 'preview', count: results.length, results });
+    return NextResponse.json({ ok: true, mode: body.send ? 'send' : 'approval', count: results.length, results });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
   }
