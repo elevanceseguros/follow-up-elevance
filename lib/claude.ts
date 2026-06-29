@@ -29,11 +29,43 @@ function fallbackClassify(input: Record<string, unknown>): Classification {
   };
 }
 
+function parseClaudeJson(text: string): Classification {
+  const cleaned = text
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const first = cleaned.indexOf('{');
+    const last = cleaned.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      return JSON.parse(cleaned.slice(first, last + 1));
+    }
+    throw new Error('Claude não retornou JSON válido');
+  }
+}
+
 export async function classifyLead(input: Record<string, unknown>): Promise<Classification> {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPICAPIKEY;
   if (!apiKey) return fallbackClassify(input);
 
-  const prompt = `Você é o assistente de follow-up da Elevance Seguros. Classifique o lead sem prometer cobertura, preço ou aprovação. Responda apenas JSON válido com: intencao, produto, urgencia, resumo, acao_recomendada, mensagem_sugerida. Dados: ${JSON.stringify(input)}`;
+  const prompt = `Retorne SOMENTE um objeto JSON válido, sem markdown, sem texto antes e sem texto depois.
+
+Você é o assistente de follow-up da Elevance Seguros. Classifique o lead sem prometer cobertura, preço ou aprovação.
+
+Campos obrigatórios:
+{
+  "intencao": "aprovou | achou_caro | vou_pensar | duvida | pediu_alteracao | nao_quer_agora | nao_respondeu",
+  "produto": "plano_saude | seguro_auto | seguro_moto | seguro_vida | consorcio | protecao_veicular | outro",
+  "urgencia": "baixa | media | alta",
+  "resumo": "resumo curto do caso",
+  "acao_recomendada": "próxima ação recomendada",
+  "mensagem_sugerida": "mensagem curta e natural de WhatsApp"
+}
+
+Dados do lead: ${JSON.stringify(input)}`;
 
   const modelCandidates = Array.from(new Set([
     'claude-haiku-4-5-20251001',
@@ -47,16 +79,24 @@ export async function classifyLead(input: Record<string, unknown>): Promise<Clas
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: 'user', content: prompt }] })
+        body: JSON.stringify({ model, max_tokens: 700, temperature: 0, messages: [{ role: 'user', content: prompt }] })
       });
 
       if (res.ok) {
         const data = await res.json();
         const text = data.content?.[0]?.text || '{}';
-        return JSON.parse(text);
+        const parsed = parseClaudeJson(text);
+        return {
+          intencao: parsed.intencao || 'nao_respondeu',
+          produto: parsed.produto || String(input.produto || 'outro'),
+          urgencia: parsed.urgencia || 'media',
+          resumo: parsed.resumo || 'Lead classificado pelo Claude.',
+          acao_recomendada: parsed.acao_recomendada || 'Manter na régua de follow-up.',
+          mensagem_sugerida: parsed.mensagem_sugerida || 'Oi! Passando rapidinho para saber se ficou alguma dúvida sobre a proposta que te enviei.'
+        };
       }
     } catch {
-      // fallback abaixo
+      // tenta próximo modelo ou fallback abaixo
     }
   }
 
