@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { classifyLead } from '@/lib/claude';
 import { assertSecret } from '@/lib/security';
 
@@ -9,6 +9,7 @@ const Body = z.object({ nome:z.string().optional().nullable(), telefone:z.string
 export async function POST(req: NextRequest) {
   try {
     assertSecret(req);
+    const supabaseAdmin = getSupabaseAdmin();
     const body = Body.parse(await req.json());
     const classification = await classifyLead(body);
     const status = normalizeStatus(classification.intencao || body.status);
