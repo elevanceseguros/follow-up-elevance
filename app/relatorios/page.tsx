@@ -8,77 +8,110 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
-function groupedCount(items: any[], key: string) {
-  const out: Record<string, number> = {};
-  for (const item of items) {
-    const label = item[key] || 'sem_info';
-    out[label] = (out[label] || 0) + 1;
-  }
-  return out;
+function currentMonthRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10) };
 }
 
-export default async function RelatoriosPage() {
+function reportTitle(type: string) {
+  const map: Record<string,string> = {
+    renovacoes_mes: 'Renovações do mês',
+    leads_abertos: 'Leads em aberto',
+    frios: 'Leads frios',
+    fechou_outro: 'Fecharam em outro lugar',
+    nao_interesse: 'Não querem / sem interesse',
+    clientes_ativos: 'Clientes ativos',
+    todos: 'Todos os registros'
+  };
+  return map[type] || map.todos;
+}
+
+export default async function RelatoriosPage({ searchParams }: { searchParams?: { tipo?: string; inicio?: string; fim?: string } }) {
   const supabaseAdmin = getSupabaseAdmin();
-  const { data } = await supabaseAdmin
-    .from('leads')
-    .select('*')
-    .order('updated_at', { ascending: false })
-    .limit(500);
+  const month = currentMonthRange();
+  const tipo = searchParams?.tipo || 'renovacoes_mes';
+  const inicio = searchParams?.inicio || month.start;
+  const fim = searchParams?.fim || month.end;
 
+  let query = supabaseAdmin.from('leads').select('*').order('updated_at', { ascending: false }).limit(1000);
+
+  if (tipo === 'renovacoes_mes') {
+    query = query.gte('renewal_date', inicio).lte('renewal_date', fim).order('renewal_date', { ascending: true });
+  } else if (tipo === 'leads_abertos') {
+    query = query.in('status', ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora']);
+  } else if (tipo === 'frios') {
+    query = query.eq('status', 'nao_quer_agora');
+  } else if (tipo === 'fechou_outro') {
+    query = query.eq('close_reason', 'perdido_fechou_outro_lugar');
+  } else if (tipo === 'nao_interesse') {
+    query = query.eq('close_reason', 'nao_tem_interesse');
+  } else if (tipo === 'clientes_ativos') {
+    query = query.eq('status', 'cliente_ativo');
+  }
+
+  const { data, error } = await query;
   const leads = data || [];
-  const status = groupedCount(leads, 'status');
-  const produtos = groupedCount(leads, 'produto');
-  const abertos = leads.filter((lead:any) => ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora'].includes(lead.status));
-  const ativos = leads.filter((lead:any) => lead.status === 'cliente_ativo');
-  const renovacoes = leads.filter((lead:any) => lead.renewal_date || lead.status === 'renovacao_futura');
 
-  return <main className="wrap">
-    <header className="hero">
+  return <main className="wrap report-page">
+    <header className="hero no-print">
       <div>
-        <span className="badge">Elevance Seguros</span>
-        <h1>Relatórios</h1>
-        <p className="muted">Resumo online dos leads, clientes, finalizações e renovações.</p>
+        <span className="badge">Relatórios</span>
+        <h1>Gerar relatório</h1>
+        <p className="muted">Escolha o tipo de relatório, abra na tela e salve/imprima só o resultado filtrado.</p>
       </div>
-      <div className="report-actions no-print">
-        <a className="btn secondary" href="/">Voltar</a>
-        <PrintButton />
+      <div className="report-actions">
+        <a className="btn secondary" href="/">Voltar ao painel</a>
+        <a className="btn secondary" href="/cadastrar">Cadastrar lead/cliente</a>
       </div>
     </header>
 
-    <section className="grid">
-      <div className="card"><span className="badge">Total no relatório</span><h2>{leads.length}</h2></div>
-      <div className="card"><span className="badge">Leads em aberto</span><h2>{abertos.length}</h2></div>
-      <div className="card"><span className="badge">Clientes ativos</span><h2>{ativos.length}</h2></div>
-      <div className="card"><span className="badge">Renovações</span><h2>{renovacoes.length}</h2></div>
+    <section className="card no-print" style={{marginBottom:24}}>
+      <form>
+        <div className="mini-grid">
+          <div>
+            <label className="field-label">Tipo de relatório</label>
+            <select name="tipo" defaultValue={tipo}>
+              <option value="renovacoes_mes">Renovações do mês</option>
+              <option value="leads_abertos">Leads em aberto</option>
+              <option value="frios">Leads frios</option>
+              <option value="fechou_outro">Fecharam em outro lugar</option>
+              <option value="nao_interesse">Não querem / sem interesse</option>
+              <option value="clientes_ativos">Clientes ativos</option>
+              <option value="todos">Todos os registros</option>
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Início</label>
+            <input type="date" name="inicio" defaultValue={inicio} />
+          </div>
+          <div>
+            <label className="field-label">Fim</label>
+            <input type="date" name="fim" defaultValue={fim} />
+          </div>
+        </div>
+        <div className="actions"><button className="btn success" type="submit">Gerar relatório</button><PrintButton /></div>
+      </form>
     </section>
 
-    <section className="grid" style={{marginTop:24}}>
-      <div className="card">
-        <h2>Por status</h2>
-        <table className="table"><tbody>{Object.entries(status).map(([name,total]) => <tr key={name}><td>{name}</td><td>{total}</td></tr>)}</tbody></table>
-      </div>
-      <div className="card">
-        <h2>Por produto</h2>
-        <table className="table"><tbody>{Object.entries(produtos).map(([name,total]) => <tr key={name}><td>{name}</td><td>{total}</td></tr>)}</tbody></table>
-      </div>
-    </section>
+    {error && <section className="card"><strong>Erro:</strong><p className="muted">{error.message}</p></section>}
 
-    <section className="card" style={{marginTop:24}}>
-      <h2>Renovações cadastradas</h2>
+    <section className="card report-sheet">
+      <div className="report-title">
+        <div>
+          <span className="badge">Elevance Seguros</span>
+          <h1>{reportTitle(tipo)}</h1>
+          <p className="muted">Emitido em {new Date().toLocaleString('pt-BR')} · Total: {leads.length}</p>
+          {tipo === 'renovacoes_mes' && <p className="muted">Período: {inicio} até {fim}</p>}
+        </div>
+        <div className="no-print"><PrintButton /></div>
+      </div>
+
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Nome</th><th>Telefone</th><th>Status</th><th>Seguradora</th><th>Placa</th><th>Vencimento</th><th>Lembrete</th></tr></thead>
-          <tbody>{renovacoes.map((lead:any) => <tr key={lead.id}><td>{lead.nome || '-'}</td><td>{lead.telefone}</td><td>{lead.status}</td><td>{lead.insurer || '-'}</td><td>{lead.vehicle_plate || '-'}</td><td>{lead.renewal_date || '-'}</td><td>{formatDate(lead.renewal_reminder_at || lead.next_followup_at)}</td></tr>)}</tbody>
-        </table>
-      </div>
-    </section>
-
-    <section className="card" style={{marginTop:24}}>
-      <h2>Últimos leads atualizados</h2>
-      <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th>Telefone</th><th>Produto</th><th>Status</th><th>Motivo</th><th>Próximo contato</th><th>Resumo</th></tr></thead>
-          <tbody>{leads.slice(0,100).map((lead:any) => <tr key={lead.id}><td>{lead.telefone}</td><td>{lead.produto}</td><td>{lead.status}</td><td>{lead.close_reason || '-'}</td><td>{formatDate(lead.next_followup_at)}</td><td>{lead.resumo || '-'}</td></tr>)}</tbody>
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Produto</th><th>Status</th><th>Motivo</th><th>Seguradora</th><th>Placa</th><th>Vencimento</th><th>Próximo contato</th><th>Resumo</th></tr></thead>
+          <tbody>{leads.map((lead:any) => <tr key={lead.id}><td>{lead.nome || '-'}</td><td>{lead.telefone}</td><td>{lead.produto}</td><td>{lead.status}</td><td>{lead.close_reason || '-'}</td><td>{lead.insurer || '-'}</td><td>{lead.vehicle_plate || '-'}</td><td>{lead.renewal_date || '-'}</td><td>{formatDate(lead.renewal_reminder_at || lead.next_followup_at)}</td><td>{lead.resumo || '-'}</td></tr>)}</tbody>
         </table>
       </div>
     </section>
