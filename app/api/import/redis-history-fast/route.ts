@@ -3,6 +3,11 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 type Msg = { role?: string; content?: string };
 
+const BRT_OFFSET_HOURS = -3;
+const BUSINESS_START_HOUR = 8;
+const BUSINESS_END_HOUR = 18;
+const FOLLOWUP_SPACING_MINUTES = 2;
+
 function auth(req: NextRequest, body: any) {
   const sent = req.headers.get('x-elevance-secret') || body?.appSecret;
   const allowed = [process.env.APP_SECRET, process.env.N8N_WEBHOOK_SECRET].filter(Boolean);
@@ -27,6 +32,66 @@ async function redis(cmd: any[]) {
   const j = await r.json().catch(() => null);
   if (!r.ok || j?.error) throw new Error(j?.error || `Erro Upstash ${r.status}`);
   return j?.result;
+}
+
+function brtParts(date = new Date()) {
+  const brt = new Date(date.getTime() + BRT_OFFSET_HOURS * 60 * 60 * 1000);
+  return {
+    year: brt.getUTCFullYear(),
+    month: brt.getUTCMonth(),
+    day: brt.getUTCDate(),
+    weekday: brt.getUTCDay(),
+    hour: brt.getUTCHours(),
+    minute: brt.getUTCMinutes()
+  };
+}
+
+function brtToUtc(year: number, month: number, day: number, hour: number, minute = 0) {
+  return new Date(Date.UTC(year, month, day, hour - BRT_OFFSET_HOURS, minute, 0, 0));
+}
+
+function nextBusinessStart(from = new Date()) {
+  const p = brtParts(from);
+  let base = brtToUtc(p.year, p.month, p.day, BUSINESS_START_HOUR, 0);
+  const isWeekend = p.weekday === 0 || p.weekday === 6;
+
+  if (!isWeekend && p.hour >= BUSINESS_START_HOUR && p.hour < BUSINESS_END_HOUR) {
+    base = new Date(from.getTime() + FOLLOWUP_SPACING_MINUTES * 60 * 1000);
+  } else if (!isWeekend && p.hour < BUSINESS_START_HOUR) {
+    base = brtToUtc(p.year, p.month, p.day, BUSINESS_START_HOUR, 0);
+  } else {
+    base = brtToUtc(p.year, p.month, p.day + 1, BUSINESS_START_HOUR, 0);
+  }
+
+  while (true) {
+    const bp = brtParts(base);
+    if (bp.weekday >= 1 && bp.weekday <= 5 && bp.hour >= BUSINESS_START_HOUR && bp.hour < BUSINESS_END_HOUR) return base;
+    base = brtToUtc(bp.year, bp.month, bp.day + 1, BUSINESS_START_HOUR, 0);
+  }
+}
+
+function addBusinessMinutes(start: Date, minutesToAdd: number) {
+  let d = new Date(start);
+  let remaining = minutesToAdd;
+
+  while (remaining > 0) {
+    const p = brtParts(d);
+    const endToday = brtToUtc(p.year, p.month, p.day, BUSINESS_END_HOUR, 0);
+    const available = Math.max(0, Math.floor((endToday.getTime() - d.getTime()) / 60000));
+
+    if (available >= remaining) return new Date(d.getTime() + remaining * 60000);
+
+    remaining -= available;
+    d = brtToUtc(p.year, p.month, p.day + 1, BUSINESS_START_HOUR, 0);
+    d = nextBusinessStart(d);
+  }
+
+  return d;
+}
+
+function scheduledFollowup(index: number) {
+  const base = nextBusinessStart(new Date());
+  return addBusinessMinutes(base, index * FOLLOWUP_SPACING_MINUTES).toISOString();
 }
 
 function isValidLeadKey(key: string) {
@@ -79,7 +144,6 @@ function status(t: string) {
 }
 function last(msgs: Msg[], role: string) { return [...msgs].reverse().find(m => m.role === role)?.content || ''; }
 function firstUser(msgs: Msg[]) { return msgs.find(m => m.role === 'user')?.content || msgs[0]?.content || 'Histórico importado do WhatsApp'; }
-function tomorrow() { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString(); }
 
 export async function POST(req: NextRequest) {
   try {
@@ -93,11 +157,13 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdmin();
     const results = [];
 
-    for (const key of keys) {
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       const telefone = phone(key);
       const msgs = parse(await redis(['GET', key]));
       if (!telefone || !msgs.length) { results.push({ key, ok:false }); continue; }
       const t = text(msgs);
+      const next_followup_at = scheduledFollowup(i);
       const lead = {
         telefone,
         nome: null,
@@ -108,15 +174,15 @@ export async function POST(req: NextRequest) {
         ultima_mensagem_enviada: last(msgs, 'assistant'),
         resumo: firstUser(msgs).slice(0, 260),
         urgencia: 'media',
-        next_followup_at: tomorrow(),
+        next_followup_at,
         updated_at: new Date().toISOString()
       };
       if (!dryRun) {
         const saved = await supabase.from('leads').upsert(lead, { onConflict: 'telefone' }).select('id').single();
         if (saved.error) throw saved.error;
-        await supabase.from('lead_events').insert({ lead_id: saved.data.id, type: 'redis_history_imported_fast', payload: { key, mensagens: msgs.length } });
+        await supabase.from('lead_events').insert({ lead_id: saved.data.id, type: 'redis_history_imported_fast', payload: { key, mensagens: msgs.length, next_followup_at } });
       }
-      results.push({ key, ok:true, telefone, produto: lead.produto, status: lead.status });
+      results.push({ key, ok:true, telefone, produto: lead.produto, status: lead.status, next_followup_at });
     }
     return NextResponse.json({ ok:true, dryRun, totalKeys: keys.length, imported: dryRun ? 0 : results.filter(r => r.ok).length, results });
   } catch (e:any) {
