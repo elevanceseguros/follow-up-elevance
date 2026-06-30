@@ -30,6 +30,57 @@ function reportTitle(type: string) {
   return map[type] || map.todos;
 }
 
+function productLabel(value?: string | null) {
+  const map: Record<string,string> = {
+    plano_saude: 'Plano de saúde',
+    seguro_auto: 'Seguro auto',
+    seguro_moto: 'Seguro moto',
+    seguro_residencial: 'Seguro residencial',
+    seguro_vida: 'Seguro de vida',
+    seguro_empresarial: 'Seguro empresarial',
+    seguro_garantia: 'Seguro garantia',
+    seguro_rc: 'Seguro RC',
+    consorcio: 'Consórcio',
+    protecao_veicular: 'Proteção veicular',
+    outro: 'Outro'
+  };
+  return map[value || ''] || value || '-';
+}
+
+function statusLabel(value?: string | null) {
+  const map: Record<string,string> = {
+    nao_respondeu: 'Não respondeu',
+    vou_pensar: 'Vai pensar',
+    achou_caro: 'Achou caro',
+    nao_quer_agora: 'Frio / não quer agora',
+    cliente_ativo: 'Cliente ativo',
+    renovacao_futura: 'Renovação futura',
+    finalizado: 'Finalizado',
+    aprovou: 'Aprovou',
+    duvida: 'Dúvida',
+    pediu_alteracao: 'Pediu alteração'
+  };
+  return map[value || ''] || value || '-';
+}
+
+function subject(lead: any) {
+  const parts = [productLabel(lead.produto)];
+  if (lead.insurer) parts.push(lead.insurer);
+  if (lead.vehicle_plate) parts.push(`Placa ${lead.vehicle_plate}`);
+  if (lead.renewal_date) parts.push(`Vencimento ${lead.renewal_date}`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+function nextAction(lead: any, tipo: string) {
+  if (lead.renewal_date) return `Renovação/vigência em ${lead.renewal_date}`;
+  if (lead.renewal_reminder_at) return `Lembrar em ${formatDate(lead.renewal_reminder_at)}`;
+  if (lead.next_followup_at) return `Chamar em ${formatDate(lead.next_followup_at)}`;
+  if (lead.close_reason === 'perdido_fechou_outro_lugar') return 'Não insistir agora; registrar perda';
+  if (lead.close_reason === 'nao_tem_interesse') return 'Não insistir; manter histórico';
+  if (lead.status === 'cliente_ativo') return 'Pós-venda / relacionamento';
+  return tipo === 'todos' ? 'Sem próxima ação cadastrada' : '-';
+}
+
 export default async function RelatoriosPage({ searchParams }: { searchParams?: Params | Promise<Params> }) {
   const params = searchParams ? await Promise.resolve(searchParams) : {};
   const supabaseAdmin = getSupabaseAdmin();
@@ -113,11 +164,20 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         <div className="no-print"><PrintButton /></div>
       </div>
 
-      {leads.length === 0 ? <div className="empty"><h3>Nenhum registro encontrado</h3><p className="muted">Tente outro tipo de relatório ou ajuste o período.</p></div> : <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th>Nome</th><th>Telefone</th><th>Produto</th><th>Status</th><th>Motivo</th><th>Seguradora</th><th>Placa</th><th>Vencimento</th><th>Próximo contato</th><th>Resumo</th></tr></thead>
-          <tbody>{leads.map((lead:any) => <tr key={lead.id}><td>{lead.nome || '-'}</td><td>{lead.telefone}</td><td>{lead.produto}</td><td>{lead.status}</td><td>{lead.close_reason || '-'}</td><td>{lead.insurer || '-'}</td><td>{lead.vehicle_plate || '-'}</td><td>{lead.renewal_date || '-'}</td><td>{formatDate(lead.renewal_reminder_at || lead.next_followup_at)}</td><td>{lead.resumo || '-'}</td></tr>)}</tbody>
-        </table>
+      {leads.length === 0 ? <div className="empty"><h3>Nenhum registro encontrado</h3><p className="muted">Tente outro tipo de relatório ou ajuste o período.</p></div> : <div className="report-list">
+        {leads.map((lead:any) => <article className="report-item" key={lead.id}>
+          <div className="report-item-top">
+            <div>
+              <h2>{lead.nome || 'Cliente sem nome'}</h2>
+              <p className="muted"><strong>Contato:</strong> {lead.telefone}</p>
+            </div>
+            <span className="badge">{statusLabel(lead.status)}</span>
+          </div>
+          <p><strong>Do que se trata:</strong> {subject(lead)}</p>
+          <p><strong>Próxima ação:</strong> {nextAction(lead, tipo)}</p>
+          {lead.close_reason && <p><strong>Motivo:</strong> {lead.close_reason}</p>}
+          <p><strong>Observações:</strong> {lead.resumo || 'Sem observações cadastradas.'}</p>
+        </article>)}
       </div>}
     </section>
   </main>;
