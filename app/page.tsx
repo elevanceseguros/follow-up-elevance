@@ -8,10 +8,29 @@ export default async function Home() {
   let leads: any[] = [];
   let approvals: any[] = [];
   let configError: string | null = null;
+  let totalLeads = 0;
+  let totalQuentes = 0;
+  let totalFollowups = 0;
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
-    const result = await supabaseAdmin.from('leads').select('*').order('updated_at', { ascending: false }).limit(20);
+
+    const countAll = await supabaseAdmin.from('leads').select('id', { count: 'exact', head: true });
+    totalLeads = countAll.count || 0;
+
+    const countQuentes = await supabaseAdmin
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['aprovou','duvida','pediu_alteracao']);
+    totalQuentes = countQuentes.count || 0;
+
+    const countFollowups = await supabaseAdmin
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora']);
+    totalFollowups = countFollowups.count || 0;
+
+    const result = await supabaseAdmin.from('leads').select('*').order('updated_at', { ascending: false }).limit(100);
     leads = result.data || [];
     if (result.error) configError = result.error.message;
 
@@ -27,9 +46,6 @@ export default async function Home() {
     configError = error.message;
   }
 
-  const total = leads.length;
-  const quentes = leads.filter(l => ['aprovou','duvida','pediu_alteracao'].includes(l.status)).length;
-  const followups = leads.filter(l => ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora'].includes(l.status)).length;
   const pendingCount = approvals.length;
 
   return <main className="wrap">
@@ -45,9 +61,9 @@ export default async function Home() {
     {configError && <section className="card" style={{marginBottom:24}}><strong>Atenção:</strong><p className="muted">{configError}</p></section>}
 
     <section className="grid">
-      <div className="card"><span className="badge">Leads recentes</span><h2>{total}</h2></div>
-      <div className="card"><span className="badge">Precisam de ação</span><h2>{quentes}</h2></div>
-      <div className="card"><span className="badge">Em follow-up</span><h2>{followups}</h2></div>
+      <div className="card"><span className="badge">Total de leads</span><h2>{totalLeads}</h2></div>
+      <div className="card"><span className="badge">Precisam de ação</span><h2>{totalQuentes}</h2></div>
+      <div className="card"><span className="badge">Em follow-up</span><h2>{totalFollowups}</h2></div>
       <div className="card"><span className="badge">Aguardando aprovação</span><h2>{pendingCount}</h2></div>
     </section>
 
@@ -55,6 +71,7 @@ export default async function Home() {
 
     <section className="card" style={{marginTop:24}}>
       <h2>Últimos leads</h2>
+      <p className="muted">Mostrando até 100 leads mais recentes. Total no CRM: {totalLeads}.</p>
       <div className="table-wrap">
         <table className="table"><thead><tr><th>Nome</th><th>Telefone</th><th>Produto</th><th>Status</th><th>Próximo follow-up</th><th>Resumo</th></tr></thead><tbody>{leads.map((lead:any)=><tr key={lead.id}><td>{lead.nome || '-'}</td><td>{lead.telefone}</td><td>{lead.produto}</td><td>{lead.status}</td><td>{lead.next_followup_at ? new Date(lead.next_followup_at).toLocaleString('pt-BR') : '-'}</td><td>{lead.resumo || '-'}</td></tr>)}</tbody></table>
       </div>
