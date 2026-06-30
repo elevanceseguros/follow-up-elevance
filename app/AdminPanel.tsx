@@ -53,7 +53,7 @@ export default function AdminPanel({ approvals }: { approvals: Approval[] }) {
         <h2>Follow-ups pendentes</h2>
         <p className="muted">Revise, aprove, finalize, cadastre renovação ou envie pós-venda pelo WhatsApp.</p>
       </div>
-      <div className="actions"><a className="btn secondary refresh-link" href="/">Atualizar painel</a><a className="btn secondary" href="/relatorios">Relatórios</a></div>
+      <div className="actions"><a className="btn secondary refresh-link" href="/">Atualizar painel</a></div>
     </div>
 
     {approvals.length === 0 ? <div className="empty">
