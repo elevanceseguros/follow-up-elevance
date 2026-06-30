@@ -3,6 +3,8 @@ import PrintButton from './PrintButton';
 
 export const dynamic = 'force-dynamic';
 
+type Params = { tipo?: string; inicio?: string; fim?: string };
+
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('pt-BR');
@@ -28,27 +30,30 @@ function reportTitle(type: string) {
   return map[type] || map.todos;
 }
 
-export default async function RelatoriosPage({ searchParams }: { searchParams?: { tipo?: string; inicio?: string; fim?: string } }) {
+export default async function RelatoriosPage({ searchParams }: { searchParams?: Params | Promise<Params> }) {
+  const params = searchParams ? await Promise.resolve(searchParams) : {};
   const supabaseAdmin = getSupabaseAdmin();
   const month = currentMonthRange();
-  const tipo = searchParams?.tipo || 'renovacoes_mes';
-  const inicio = searchParams?.inicio || month.start;
-  const fim = searchParams?.fim || month.end;
+  const tipo = params?.tipo || 'renovacoes_mes';
+  const inicio = params?.inicio || month.start;
+  const fim = params?.fim || month.end;
 
-  let query = supabaseAdmin.from('leads').select('*').order('updated_at', { ascending: false }).limit(1000);
+  let query = supabaseAdmin.from('leads').select('*').limit(1000);
 
   if (tipo === 'renovacoes_mes') {
     query = query.gte('renewal_date', inicio).lte('renewal_date', fim).order('renewal_date', { ascending: true });
   } else if (tipo === 'leads_abertos') {
-    query = query.in('status', ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora']);
+    query = query.in('status', ['nao_respondeu','vou_pensar','achou_caro','nao_quer_agora']).order('updated_at', { ascending: false });
   } else if (tipo === 'frios') {
-    query = query.eq('status', 'nao_quer_agora');
+    query = query.eq('status', 'nao_quer_agora').order('updated_at', { ascending: false });
   } else if (tipo === 'fechou_outro') {
-    query = query.eq('close_reason', 'perdido_fechou_outro_lugar');
+    query = query.eq('close_reason', 'perdido_fechou_outro_lugar').order('updated_at', { ascending: false });
   } else if (tipo === 'nao_interesse') {
-    query = query.eq('close_reason', 'nao_tem_interesse');
+    query = query.eq('close_reason', 'nao_tem_interesse').order('updated_at', { ascending: false });
   } else if (tipo === 'clientes_ativos') {
-    query = query.eq('status', 'cliente_ativo');
+    query = query.eq('status', 'cliente_ativo').order('updated_at', { ascending: false });
+  } else {
+    query = query.order('updated_at', { ascending: false });
   }
 
   const { data, error } = await query;
@@ -91,7 +96,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
             <input type="date" name="fim" defaultValue={fim} />
           </div>
         </div>
-        <div className="actions"><button className="btn success" type="submit">Gerar relatório</button><PrintButton /></div>
+        <div className="actions"><button className="btn success" type="submit">Gerar relatório</button></div>
       </form>
     </section>
 
@@ -108,12 +113,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         <div className="no-print"><PrintButton /></div>
       </div>
 
-      <div className="table-wrap">
+      {leads.length === 0 ? <div className="empty"><h3>Nenhum registro encontrado</h3><p className="muted">Tente outro tipo de relatório ou ajuste o período.</p></div> : <div className="table-wrap">
         <table className="table">
           <thead><tr><th>Nome</th><th>Telefone</th><th>Produto</th><th>Status</th><th>Motivo</th><th>Seguradora</th><th>Placa</th><th>Vencimento</th><th>Próximo contato</th><th>Resumo</th></tr></thead>
           <tbody>{leads.map((lead:any) => <tr key={lead.id}><td>{lead.nome || '-'}</td><td>{lead.telefone}</td><td>{lead.produto}</td><td>{lead.status}</td><td>{lead.close_reason || '-'}</td><td>{lead.insurer || '-'}</td><td>{lead.vehicle_plate || '-'}</td><td>{lead.renewal_date || '-'}</td><td>{formatDate(lead.renewal_reminder_at || lead.next_followup_at)}</td><td>{lead.resumo || '-'}</td></tr>)}</tbody>
         </table>
-      </div>
+      </div>}
     </section>
   </main>;
 }
