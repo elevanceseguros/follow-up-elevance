@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import AdminPanel from './AdminPanel';
+import AutoRefresh from './AutoRefresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export default async function Home() {
         <span className="badge">Elevance Seguros</span>
         <h1>Central de Follow-up</h1>
         <p className="muted">Painel interno para revisar mensagens geradas pelo Claude e aprovar envios pelo WhatsApp.</p>
+        <AutoRefresh />
       </div>
     </header>
 
