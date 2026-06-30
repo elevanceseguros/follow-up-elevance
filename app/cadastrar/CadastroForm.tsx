@@ -3,11 +3,22 @@
 import { useState } from 'react';
 import { createLead } from './actions';
 
+const renewalProducts = [
+  'seguro_auto',
+  'seguro_moto',
+  'seguro_residencial',
+  'seguro_vida',
+  'seguro_empresarial',
+  'seguro_garantia',
+  'seguro_rc'
+];
+
 export default function CadastroForm() {
   const [produto, setProduto] = useState('plano_saude');
   const [status, setStatus] = useState('nao_respondeu');
 
-  const showInsurance = ['seguro_auto', 'seguro_moto'].includes(produto) || ['cliente_ativo', 'renovacao_futura'].includes(status);
+  const showPolicy = renewalProducts.includes(produto) || ['cliente_ativo', 'renovacao_futura'].includes(status);
+  const showPlate = ['seguro_auto', 'seguro_moto'].includes(produto);
 
   return <form action={createLead}>
     <div className="mini-grid">
@@ -25,7 +36,11 @@ export default function CadastroForm() {
           <option value="plano_saude">Plano de saúde</option>
           <option value="seguro_auto">Seguro auto</option>
           <option value="seguro_moto">Seguro moto</option>
+          <option value="seguro_residencial">Seguro residencial</option>
           <option value="seguro_vida">Seguro de vida</option>
+          <option value="seguro_empresarial">Seguro empresarial</option>
+          <option value="seguro_garantia">Seguro garantia</option>
+          <option value="seguro_rc">Seguro RC</option>
           <option value="consorcio">Consórcio</option>
           <option value="protecao_veicular">Proteção veicular</option>
           <option value="outro">Outro</option>
@@ -48,9 +63,9 @@ export default function CadastroForm() {
     <label className="field-label">Resumo/observações</label>
     <textarea name="resumo" rows={4} placeholder="Ex: cotou plano de saúde para família, pediu para retornar semana que vem..." />
 
-    {showInsurance && <section className="conditional-box">
-      <h2>Dados de seguro/renovação</h2>
-      <p className="muted">Aparece apenas para seguro auto/moto, cliente ativo ou renovação futura.</p>
+    {showPolicy && <section className="conditional-box">
+      <h2>Dados da apólice / vigência / renovação</h2>
+      <p className="muted">Use para seguros com vigência, renovação, aniversário de apólice ou prorrogação. Para plano de saúde, use apenas próximo contato/aniversário em observações por enquanto.</p>
       <div className="mini-grid">
         <div>
           <label className="field-label">Seguradora/operadora</label>
@@ -60,12 +75,12 @@ export default function CadastroForm() {
           <label className="field-label">Nº apólice/proposta</label>
           <input name="policy_number" />
         </div>
-        <div>
+        {showPlate && <div>
           <label className="field-label">Placa</label>
           <input name="vehicle_plate" placeholder="ABC1D23" />
-        </div>
+        </div>}
         <div>
-          <label className="field-label">Vencimento da apólice</label>
+          <label className="field-label">Vencimento / fim de vigência</label>
           <input type="date" name="renewal_date" />
         </div>
       </div>
@@ -73,7 +88,7 @@ export default function CadastroForm() {
 
     <section className="conditional-box subtle-box">
       <h2>Próximo contato</h2>
-      <p className="muted">Use quando quiser agendar um retorno manual. Para renovação de seguro auto/moto, o sistema também usa o vencimento da apólice.</p>
+      <p className="muted">Use quando quiser agendar um retorno manual. Para seguros com vigência, o sistema também pode usar o vencimento para lembrar 30 dias antes.</p>
       <div className="mini-grid">
         <div>
           <label className="field-label">Data do próximo contato</label>
