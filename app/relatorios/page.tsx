@@ -52,7 +52,7 @@ function statusLabel(value?: string | null) {
     nao_respondeu: 'Não respondeu',
     vou_pensar: 'Vai pensar',
     achou_caro: 'Achou caro',
-    nao_quer_agora: 'Frio / não quer agora',
+    nao_quer_agora: 'Frio',
     cliente_ativo: 'Cliente ativo',
     renovacao_futura: 'Renovação futura',
     finalizado: 'Finalizado',
@@ -63,22 +63,37 @@ function statusLabel(value?: string | null) {
   return map[value || ''] || value || '-';
 }
 
+function clientName(lead: any) {
+  if (lead.nome) return lead.nome;
+  const resumo = String(lead.resumo || '');
+  const patterns = [
+    /(?:nome|cliente)[:\- ]+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+){0,3})/i,
+    /^([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+){0,2})[,\- ]/,
+    /(?:sou|aqui é|aqui e)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ]+){0,2})/i
+  ];
+  for (const pattern of patterns) {
+    const found = resumo.match(pattern)?.[1]?.trim();
+    if (found && found.length >= 3 && !/^(oi|ola|olá|bom|boa|por|quero|tenho)$/i.test(found)) return found;
+  }
+  return 'Sem nome';
+}
+
 function subject(lead: any) {
   const parts = [productLabel(lead.produto)];
   if (lead.insurer) parts.push(lead.insurer);
   if (lead.vehicle_plate) parts.push(`Placa ${lead.vehicle_plate}`);
-  if (lead.renewal_date) parts.push(`Vencimento ${lead.renewal_date}`);
+  if (lead.renewal_date) parts.push(`Venc. ${lead.renewal_date}`);
   return parts.filter(Boolean).join(' · ');
 }
 
 function nextAction(lead: any, tipo: string) {
-  if (lead.renewal_date) return `Renovação/vigência em ${lead.renewal_date}`;
+  if (lead.renewal_date) return `Renovar/vigência em ${lead.renewal_date}`;
   if (lead.renewal_reminder_at) return `Lembrar em ${formatDate(lead.renewal_reminder_at)}`;
   if (lead.next_followup_at) return `Chamar em ${formatDate(lead.next_followup_at)}`;
-  if (lead.close_reason === 'perdido_fechou_outro_lugar') return 'Não insistir agora; registrar perda';
+  if (lead.close_reason === 'perdido_fechou_outro_lugar') return 'Registrar perda; não insistir';
   if (lead.close_reason === 'nao_tem_interesse') return 'Não insistir; manter histórico';
   if (lead.status === 'cliente_ativo') return 'Pós-venda / relacionamento';
-  return tipo === 'todos' ? 'Sem próxima ação cadastrada' : '-';
+  return tipo === 'todos' ? 'Sem ação cadastrada' : '-';
 }
 
 export default async function RelatoriosPage({ searchParams }: { searchParams?: Params | Promise<Params> }) {
@@ -115,7 +130,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
       <div>
         <span className="badge">Relatórios</span>
         <h1>Gerar relatório</h1>
-        <p className="muted">Escolha o tipo de relatório, abra na tela e salve/imprima só o resultado filtrado.</p>
+        <p className="muted">Escolha o tipo de relatório e gere uma lista objetiva para ação.</p>
       </div>
       <div className="report-actions">
         <a className="btn secondary" href="/">Voltar ao painel</a>
@@ -164,20 +179,18 @@ export default async function RelatoriosPage({ searchParams }: { searchParams?: 
         <div className="no-print"><PrintButton /></div>
       </div>
 
-      {leads.length === 0 ? <div className="empty"><h3>Nenhum registro encontrado</h3><p className="muted">Tente outro tipo de relatório ou ajuste o período.</p></div> : <div className="report-list">
-        {leads.map((lead:any) => <article className="report-item" key={lead.id}>
-          <div className="report-item-top">
-            <div>
-              <h2>{lead.nome || 'Cliente sem nome'}</h2>
-              <p className="muted"><strong>Contato:</strong> {lead.telefone}</p>
-            </div>
-            <span className="badge">{statusLabel(lead.status)}</span>
-          </div>
-          <p><strong>Do que se trata:</strong> {subject(lead)}</p>
-          <p><strong>Próxima ação:</strong> {nextAction(lead, tipo)}</p>
-          {lead.close_reason && <p><strong>Motivo:</strong> {lead.close_reason}</p>}
-          <p><strong>Observações:</strong> {lead.resumo || 'Sem observações cadastradas.'}</p>
-        </article>)}
+      {leads.length === 0 ? <div className="empty"><h3>Nenhum registro encontrado</h3><p className="muted">Tente outro tipo de relatório ou ajuste o período.</p></div> : <div className="table-wrap report-table-wrap">
+        <table className="table report-table">
+          <thead><tr><th>Cliente</th><th>Contato</th><th>Do que se trata</th><th>Situação</th><th>Próxima ação</th><th>Observações</th></tr></thead>
+          <tbody>{leads.map((lead:any) => <tr key={lead.id}>
+            <td>{clientName(lead)}</td>
+            <td>{lead.telefone}</td>
+            <td>{subject(lead)}</td>
+            <td>{statusLabel(lead.status)}</td>
+            <td>{nextAction(lead, tipo)}</td>
+            <td>{lead.resumo || '-'}</td>
+          </tr>)}</tbody>
+        </table>
       </div>}
     </section>
   </main>;
