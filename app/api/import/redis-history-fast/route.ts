@@ -130,17 +130,24 @@ function phone(key: string) { return key.replace(/_historico$/, '').replace(/\D/
 function text(msgs: Msg[]) { return msgs.map(m => m.content || '').join(' ').toLowerCase(); }
 function produto(t: string) {
   if (t.includes('plano') || t.includes('saúde') || t.includes('saude') || t.includes('hapvida') || t.includes('unimed') || t.includes('sagrada')) return 'plano_saude';
-  if (t.includes('auto') || t.includes('carro')) return 'seguro_auto';
+  if (t.includes('auto') || t.includes('carro') || t.includes('apólice') || t.includes('apolice')) return 'seguro_auto';
   if (t.includes('vida')) return 'seguro_vida';
   if (t.includes('consórcio') || t.includes('consorcio')) return 'consorcio';
   return 'outro';
 }
 function status(t: string) {
+  if (t.includes('fechei em outro') || t.includes('fechou em outro') || t.includes('contratei em outro') || t.includes('já fechei em outro') || t.includes('ja fechei em outro')) return 'finalizado';
+  if (t.includes('não quero') || t.includes('nao quero') || t.includes('não tenho interesse') || t.includes('nao tenho interesse') || t.includes('agora não') || t.includes('agora nao')) return 'finalizado';
+  if (t.includes('fechado') || t.includes('aprovado') || t.includes('pode fazer') || t.includes('vamos fazer') || t.includes('vou fechar') || t.includes('contratado')) return 'cliente_ativo';
   if (t.includes('caro') || t.includes('valor alto')) return 'achou_caro';
   if (t.includes('vou pensar') || t.includes('pensar') || t.includes('ver com')) return 'vou_pensar';
-  if (t.includes('não quero') || t.includes('nao quero') || t.includes('agora não') || t.includes('agora nao')) return 'nao_quer_agora';
-  if (t.includes('fechado') || t.includes('aprov') || t.includes('vamos fazer')) return 'aprovou';
   return 'nao_respondeu';
+}
+function closeReason(t: string) {
+  if (t.includes('fechei em outro') || t.includes('fechou em outro') || t.includes('contratei em outro') || t.includes('já fechei em outro') || t.includes('ja fechei em outro')) return 'perdido_fechou_outro_lugar';
+  if (t.includes('não quero') || t.includes('nao quero') || t.includes('não tenho interesse') || t.includes('nao tenho interesse') || t.includes('agora não') || t.includes('agora nao')) return 'nao_tem_interesse';
+  if (t.includes('fechado') || t.includes('aprovado') || t.includes('pode fazer') || t.includes('vamos fazer') || t.includes('vou fechar') || t.includes('contratado')) return 'fechou_conosco';
+  return null;
 }
 function last(msgs: Msg[], role: string) { return [...msgs].reverse().find(m => m.role === role)?.content || ''; }
 function firstUser(msgs: Msg[]) { return msgs.find(m => m.role === 'user')?.content || msgs[0]?.content || 'Histórico importado do WhatsApp'; }
@@ -163,26 +170,30 @@ export async function POST(req: NextRequest) {
       const msgs = parse(await redis(['GET', key]));
       if (!telefone || !msgs.length) { results.push({ key, ok:false }); continue; }
       const t = text(msgs);
-      const next_followup_at = scheduledFollowup(i);
+      const leadStatus = status(t);
+      const reason = closeReason(t);
+      const next_followup_at = ['finalizado','cliente_ativo'].includes(leadStatus) ? null : scheduledFollowup(i);
       const lead = {
         telefone,
         nome: null,
         produto: produto(t),
-        status: status(t),
+        status: leadStatus,
         origem: 'upstash_import_fast',
         ultima_mensagem_cliente: last(msgs, 'user'),
         ultima_mensagem_enviada: last(msgs, 'assistant'),
         resumo: firstUser(msgs).slice(0, 260),
         urgencia: 'media',
+        close_reason: reason,
+        closed_at: reason ? new Date().toISOString() : null,
         next_followup_at,
         updated_at: new Date().toISOString()
       };
       if (!dryRun) {
         const saved = await supabase.from('leads').upsert(lead, { onConflict: 'telefone' }).select('id').single();
         if (saved.error) throw saved.error;
-        await supabase.from('lead_events').insert({ lead_id: saved.data.id, type: 'redis_history_imported_fast', payload: { key, mensagens: msgs.length, next_followup_at } });
+        await supabase.from('lead_events').insert({ lead_id: saved.data.id, type: 'redis_history_imported_fast', payload: { key, mensagens: msgs.length, next_followup_at, close_reason: reason } });
       }
-      results.push({ key, ok:true, telefone, produto: lead.produto, status: lead.status, next_followup_at });
+      results.push({ key, ok:true, telefone, produto: lead.produto, status: lead.status, close_reason: reason, next_followup_at });
     }
     return NextResponse.json({ ok:true, dryRun, totalKeys: keys.length, imported: dryRun ? 0 : results.filter(r => r.ok).length, results });
   } catch (e:any) {
