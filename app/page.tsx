@@ -56,6 +56,10 @@ export default async function Home() {
         <p className="muted">Painel interno para revisar mensagens geradas pelo Claude e aprovar envios pelo WhatsApp.</p>
         <AutoRefresh />
       </div>
+      <div className="actions">
+        <a className="btn secondary" href="/cadastrar">Cadastrar lead/cliente</a>
+        <a className="btn secondary" href="/relatorios">Relatórios</a>
+      </div>
     </header>
 
     {configError && <section className="card" style={{marginBottom:24}}><strong>Atenção:</strong><p className="muted">{configError}</p></section>}
