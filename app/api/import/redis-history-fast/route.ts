@@ -29,6 +29,12 @@ async function redis(cmd: any[]) {
   return j?.result;
 }
 
+function isValidLeadKey(key: string) {
+  if (key.includes('-group') || key.includes('-broadcast') || key.includes('@lid')) return false;
+  const base = key.replace(/_historico$/, '');
+  return /^55\d{10,11}$/.test(base);
+}
+
 async function scan(pattern: string, limit: number) {
   let cursor = '0';
   const keys: string[] = [];
@@ -36,7 +42,9 @@ async function scan(pattern: string, limit: number) {
     const out = await redis(['SCAN', cursor, 'MATCH', pattern, 'COUNT', 100]);
     cursor = String(out?.[0] || '0');
     for (const k of out?.[1] || []) {
-      keys.push(String(k));
+      const key = String(k);
+      if (!isValidLeadKey(key)) continue;
+      keys.push(key);
       if (keys.length >= limit) return keys;
     }
   } while (cursor !== '0');
@@ -80,7 +88,8 @@ export async function POST(req: NextRequest) {
     const pattern = body.pattern || '*_historico';
     const limit = Math.min(Number(body.limit || 50), 500);
     const dryRun = body.dryRun !== false;
-    const keys = Array.isArray(body.keys) && body.keys.length ? body.keys.slice(0, limit) : await scan(pattern, limit);
+    const rawKeys = Array.isArray(body.keys) && body.keys.length ? body.keys.slice(0, limit) : await scan(pattern, limit);
+    const keys = rawKeys.filter((key: string) => isValidLeadKey(String(key)));
     const supabase = getSupabaseAdmin();
     const results = [];
 
